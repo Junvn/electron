@@ -26,17 +26,34 @@ const githubOpts = {
 let retry = 0
 
 function uploadToGitHub () {
-  github.repos.uploadAsset(githubOpts).then(() => {
-    console.log(`Successfully uploaded ${fileName} to GitHub.`)
-    process.exit()
+  const fakeFileNamePrefix = `fake-${fileName}-fake-`
+  const fakeFileName = `${fakeFileNamePrefix}${Date.now()}`
+
+  github.repos.uploadAsset({
+    owner: 'electron',
+    repo: targetRepo,
+    id: releaseId,
+    filePath: filePath,
+    name: fakeFileName
+  }).then((uploadResponse) => {
+    console.log(`Successfully uploaded ${fileName} to GitHub as ${fakeFileName}. Going for the rename now.`)
+    return github.repos.updateAsset({
+      owner: 'electron',
+      repo: 'electron',
+      asset_id: uploadResponse.data.id,
+      name: fileName
+    }).then(() => {
+      console.log(`Successfully renamed ${fakeFileName} to ${fileName}. All done now.`)
+      process.exit(0)
+    })
   }).catch((err) => {
     if (retry < 4) {
-      console.log(`Error uploading ${fileName} to GitHub, will retry.  Error was:`, err)
+      console.log(`Error uploading ${fileName} as ${fakeFileName} to GitHub, will retry.  Error was:`, err)
       retry++
       github.repos.getRelease(githubOpts).then(release => {
         console.log('Got list of assets for existing release:')
         console.log(JSON.stringify(release.data.assets, null, '  '))
-        const existingAssets = release.data.assets.filter(asset => asset.name === fileName)
+        const existingAssets = release.data.assets.filter(asset => asset.name.startsWith(fakeFileNamePrefix) || asset.name === fileName)
         if (existingAssets.length > 0) {
           console.log(`${fileName} already exists; will delete before retrying upload.`)
           github.repos.deleteAsset({
